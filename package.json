@@ -1,0 +1,35 @@
+{
+  "name": "llm-based-object-detection-validation",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Import data from an S3 (compatible) bucket into a project",
+  "scripts": {
+    "build": "node_modules/.bin/tsc -p .",
+    "eslint": "tsc -b . && eslint . -c .eslintrc.json --resolve-plugins-relative-to . --ext .ts",
+    "lint": "npm run eslint"
+  },
+  "author": "Jan Jongboom <jan@edgeimpulse.com>",
+  "license": "SEE LICENSE IN LICENSE",
+  "dependencies": {
+    "commander": "4.1.1",
+    "edge-impulse-api": "^1.49.31",
+    "openai": "^4.47.1",
+    "tiny-async-pool": "1.1.0",
+    "ws": "7.2.0"
+  },
+  "devDependencies": {
+    "@stylistic/eslint-plugin-ts": "1.8.1",
+    "@types/commander": "2.12.2",
+    "@types/node": "20.12.7",
+    "@types/tiny-async-pool": "1.0.0",
+    "@types/ws": "6.0.3",
+    "@typescript-eslint/eslint-plugin": "7.8.0",
+    "@typescript-eslint/parser": "7.8.0",
+    "eslint": "8.56.0",
+    "eslint-config-prettier": "9.1.0",
+    "eslint-plugin-import": "2.29.1",
+    "eslint-plugin-jsdoc": "48.2.3",
+    "oxlint": "0.3.4",
+    "typescript": "4.9.5"
+  }
+}

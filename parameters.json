@@ -1,0 +1,42 @@
+[{
+    "name": "OpenAI API Key",
+    "value": "",
+    "type": "secret",
+    "help": "An API Key that gives access to OpenAI",
+    "param": "OPENAI_API_KEY"
+}, 
+{
+    "name": "Validation Prompt 1",
+    "value": "The bounding boxes and labels do not correspond to to the objects in the image",
+    "type": "string",
+    "help": "Disable the sample if this prompt is true",
+    "param": "validation1"
+}, 
+{
+    "name": "Validation Prompt 2",
+    "value": "The image is not clear enough to determine the objects in the image.",
+    "type": "string",
+    "help": "Disable the sample if this prompt is true",
+    "param": "validation2"
+},
+{
+    "name": "Validation Prompt 3",
+    "value": "There is text overlay visible on this image.",
+    "type": "string",
+    "help": "Disable the sample if this prompt is true",
+    "param": "validation3"
+},
+{
+    "name": "Max. no. of samples to label",
+    "value": "",
+    "type": "int",
+    "optional": true,
+    "help": "Number of samples to label",
+    "param": "limit"
+}, {
+    "name": "Concurrency",
+    "value": "10",
+    "type": "int",
+    "help": "Number of samples to label in parallel",
+    "param": "concurrency"
+}]
