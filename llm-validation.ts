@@ -140,7 +140,7 @@ const concurrencyArgv = program.concurrency ? Number(program.concurrency) : 1;
                         }]
                     });
 
-                    console.log('resp', JSON.stringify(resp, null, 4));
+                    // console.log('resp', JSON.stringify(resp, null, 4));
 
                     if (resp.choices.length !== 1) {
                         throw new Error('Expected choices to have 1 item (' + JSON.stringify(resp) + ')');
