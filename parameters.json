@@ -50,6 +50,27 @@
             "param": "limit"
         },
         {
+            "name": "Image quality",
+            "value": "auto",
+            "type": "select",
+            "valid": [
+                {
+                    "label": "Auto, depending on image input size",
+                    "value": "auto"
+                },
+                {
+                    "label": "Low-res mode ",
+                    "value": "low"
+                },
+                {
+                    "label": "High-res mode",
+                    "value": "high"
+                }
+            ],
+            "help": "Whether to send images in low (512x512) or high (using 512x512 tiles) resolution mode. If you don't need high fidelity inference then low-resolution saves a lot of tokens.",
+            "param": "image-quality"
+        },
+        {
             "name": "Concurrency",
             "value": "10",
             "type": "int",

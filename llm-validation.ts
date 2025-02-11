@@ -37,6 +37,7 @@ program
             `Disable the sample if this prompt is true` +
             `E.g. "The bounding boxes and labels do not correspond to to the objects in the image" `)
     .option('--limit <n>', `Max number of samples to process`)
+    .option('--image-quality <quality>', 'Quality of the image to send to GPT. Either "auto", "low" or "high" (default "auto")')
     .option('--concurrency <n>', `Concurrency (default: 1)`)
     .option('--data-ids-file <file>', 'File with IDs (as JSON)')
     .option('--propose-actions <job-id>', 'If this flag is passed in, only propose suggested actions')
@@ -50,6 +51,7 @@ const validation1Argv = <string>program.validation1;
 const validation2Argv = <string>program.validation2;
 const validation3Argv = <string>program.validation3;
 const disableLabelsArgv = ["invalid"];
+const imageQualityArgv = (<'auto' | 'low' | 'high'>program.imageQuality) || 'auto';
 const limitArgv = program.limit ? Number(program.limit) : undefined;
 const concurrencyArgv = program.concurrency ? Number(program.concurrency) : 1;
 const dataIdsFile = <string | undefined>program.dataIdsFile;
@@ -101,6 +103,7 @@ if (dataIdsFile) {
         console.log(`    Validation1: "${validation1Argv}"`);
         console.log(`    Validation2: "${validation2Argv}"`);
         console.log(`    Validation3: "${validation3Argv}"`);
+        console.log(`    Image quality: ${imageQualityArgv}`);
         console.log(`    Limit no. of samples to label to: ${typeof limitArgv === 'number' ? limitArgv.toLocaleString() : 'No limit'}`);
         console.log(`    Concurrency: ${concurrencyArgv}`);
         if (dataIds) {
@@ -189,7 +192,7 @@ if (dataIdsFile) {
                                 type: 'image_url',
                                 image_url: {
                                     url: 'data:image/jpeg;base64,' + (imgBuffer.toString('base64')),
-                                    detail: 'auto'
+                                    detail: imageQualityArgv,
                                 }
                             }]
                         }],
