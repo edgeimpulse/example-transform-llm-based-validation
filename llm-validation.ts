@@ -37,7 +37,10 @@ program
             `Disable the sample if this prompt is true` +
             `E.g. "The bounding boxes and labels do not correspond to to the objects in the image" `)
     .option('--limit <n>', `Max number of samples to process`)
+    .option('--image-quality <quality>', 'Quality of the image to send to GPT. Either "auto", "low" or "high" (default "auto")')
     .option('--concurrency <n>', `Concurrency (default: 1)`)
+    .option('--data-ids-file <file>', 'File with IDs (as JSON)')
+    .option('--propose-actions <job-id>', 'If this flag is passed in, only propose suggested actions')
     .option('--verbose', 'Enable debug logs')
     .allowUnknownOption(true)
     .parse(process.argv);
@@ -47,10 +50,41 @@ const api = new EdgeImpulseApi({ endpoint: API_URL });
 const validation1Argv = <string>program.validation1;
 const validation2Argv = <string>program.validation2;
 const validation3Argv = <string>program.validation3;
-const disableLabelsArgv = ["invalid"]
+const disableLabelsArgv = ["invalid"];
+const imageQualityArgv = (<'auto' | 'low' | 'high'>program.imageQuality) || 'auto';
 const limitArgv = program.limit ? Number(program.limit) : undefined;
 const concurrencyArgv = program.concurrency ? Number(program.concurrency) : 1;
+const dataIdsFile = <string | undefined>program.dataIdsFile;
+const proposeActionsJobId = program.proposeActions ?
+    Number(program.proposeActions) :
+    undefined;
 
+if (proposeActionsJobId && isNaN(proposeActionsJobId)) {
+    console.log('--propose-actions should be numeric');
+    process.exit(1);
+}
+let dataIds: number[] | undefined;
+if (dataIdsFile) {
+    if (!fs.existsSync(dataIdsFile)) {
+        console.log(`"${dataIdsFile}" does not exist (via --data-ids-file)`);
+        process.exit(1);
+    }
+    try {
+        dataIds = <number[]>JSON.parse(fs.readFileSync(dataIdsFile, 'utf-8'));
+        if (!Array.isArray(dataIds)) {
+            throw new Error('Content of the file is not an array');
+        }
+        for (let ix = 0; ix < dataIds.length; ix++) {
+            if (isNaN(dataIds[ix])) {
+                throw new Error('The value at index ' + ix + ' is not numeric');
+            }
+        }
+    }
+    catch (ex2) {
+        console.log(`Failed to parse "${dataIdsFile}" (via --data-ids-file), should be a JSON array with numbers`, ex2);
+        process.exit(1);
+    }
+}
 
 // eslint-disable-next-line @typescript-eslint/no-floating-promises
 (async () => {
@@ -69,24 +103,45 @@ const concurrencyArgv = program.concurrency ? Number(program.concurrency) : 1;
         console.log(`    Validation1: "${validation1Argv}"`);
         console.log(`    Validation2: "${validation2Argv}"`);
         console.log(`    Validation3: "${validation3Argv}"`);
+        console.log(`    Image quality: ${imageQualityArgv}`);
         console.log(`    Limit no. of samples to label to: ${typeof limitArgv === 'number' ? limitArgv.toLocaleString() : 'No limit'}`);
         console.log(`    Concurrency: ${concurrencyArgv}`);
-      
-        console.log(`Finding enabled data...`);
-        const { enabledSamples, uniqueLabels } = await listEnabledData(project.id);
-        //find list of unique labels in enabledSamples.s.boundingBoxes
-
-        console.log(`Unique labels in enabled data: ${Array.from(uniqueLabels).join(', ')}`);
-
-        console.log(`Finding enabled data OK (found ${enabledSamples.length} samples)`);
+        if (dataIds) {
+            if (dataIds.length < 6) {
+                console.log(`    IDs: ${dataIds.join(', ')}`);
+            }
+            else {
+                console.log(`    IDs: ${dataIds.slice(0, 5).join(', ')} and ${dataIds.length - 5} others`);
+            }
+        }
         console.log(``);
 
+        const uniqueLabels = await getUniqueLabels(project.id);
+        console.log(`Unique labels in dataset: ${Array.from(uniqueLabels).join(', ')}`);
+
+        let samplesToProcess: models.Sample[];
+
+        if (dataIds) {
+            console.log(`Finding data by ID...`);
+            samplesToProcess = await listDataByIds(project.id, dataIds);
+            console.log(`Finding data by ID OK (found ${samplesToProcess.length} samples)`);
+            console.log(``);
+        }
+        else {
+            console.log(`Finding enabled data...`);
+            samplesToProcess = await listEnabledData(project.id);
+            console.log(`Finding enabled data OK (found ${samplesToProcess.length} samples)`);
+            console.log(``);
+        }
+
         const total = typeof limitArgv === 'number' ?
-            (enabledSamples.length > limitArgv ? limitArgv : enabledSamples.length) :
-            enabledSamples.length;
+            (samplesToProcess.length > limitArgv ? limitArgv : samplesToProcess.length) :
+            samplesToProcess.length;
         let processed = 0;
         let error = 0;
         let labelCount: { [k: string]: number } = { };
+        let promptTokensTotal = 0;
+        let completionTokensTotal = 0;
 
         const getSummary = () => {
             let labelStr = Object.keys(labelCount).map(k => k + '=' + labelCount[k]).join(', ');
@@ -104,16 +159,19 @@ const concurrencyArgv = program.concurrency ? Number(program.concurrency) : 1;
                 getSummary());
         }, 3000);
 
+        const model: OpenAI.Chat.ChatModel = 'gpt-4o-2024-08-06';
+
         const labelSampleWithOpenAI = async (sample: models.Sample) => {
             try {
-                const formattedBoundingBoxes = sample.boundingBoxes.map((box: { label: string; x: any; y: any; width: any; height: any; }) => {
-                    return `Label: ${box.label.trim()}, Location: (x: ${box.x}, y: ${box.y}), Size: (width: ${box.width}, height: ${box.height})`;
-                  }).join('\n');
+                const formattedBoundingBoxes = sample.boundingBoxes.map(
+                    (box: { label: string; x: any; y: any; width: any; height: any; }) => {
+                        return `Label: ${box.label.trim()}, Location: (x: ${box.x}, y: ${box.y}), Size: (width: ${box.width}, height: ${box.height})`;
+                    }).join('\n');
                 const json = await retryWithTimeout(async () => {
                     const imgBuffer = await api.rawData.getSampleAsImage(project.id, sample.id, { });
-                    
+
                     const resp = await openai.chat.completions.create({
-                        model: 'gpt-4o-2024-05-13',
+                        model: model,
                         messages: [{
                         role: 'system',
                         content: `You always respond with the following JSON structure, regardless of the prompt: \`{ "label": "XXX", "reason": "YYY" }\`. ` +
@@ -128,17 +186,25 @@ const concurrencyArgv = program.concurrency ? Number(program.concurrency) : 1;
                                 - \`${validation1Argv}\`
                                 - \`${validation2Argv}\`
                                 - \`${validation3Argv}\`
-                                
+
                                 Otherwise respond with \"valid\".`,
                             }, {
                                 type: 'image_url',
                                 image_url: {
                                     url: 'data:image/jpeg;base64,' + (imgBuffer.toString('base64')),
-                                    detail: 'auto'
+                                    detail: imageQualityArgv,
                                 }
                             }]
-                        }]
+                        }],
+                        response_format: {
+                            type: 'json_object'
+                        },
                     });
+
+                    if (resp.usage) {
+                        promptTokensTotal += resp.usage.prompt_tokens;
+                        completionTokensTotal += resp.usage.completion_tokens;
+                    }
 
                     // console.log('resp', JSON.stringify(resp, null, 4));
 
@@ -152,9 +218,16 @@ const concurrencyArgv = program.concurrency ? Number(program.concurrency) : 1;
                         throw new Error('Expected choices[0].message.content to be a string (' + JSON.stringify(resp) + ')');
                     }
 
+                    let respBody = resp.choices[0].message.content;
+
+                    // many times we get a Markdown-like response... strip this
+                    if (respBody.startsWith('```json') && respBody.endsWith('```')) {
+                        respBody = respBody.slice('```json'.length, respBody.length - 3);
+                    }
+
                     let jsonContent: { label: string, reason: string };
                     try {
-                        jsonContent = <{ label: string, reason: string }>JSON.parse(resp.choices[0].message.content);
+                        jsonContent = <{ label: string, reason: string }>JSON.parse(respBody);
                         if (typeof jsonContent.label !== 'string') {
                             throw new Error('label was not of type string');
                         }
@@ -184,17 +257,32 @@ const concurrencyArgv = program.concurrency ? Number(program.concurrency) : 1;
                 });
 
                 await retryWithTimeout(async () => {
-                    if (disableLabelsArgv.indexOf(json.label) > -1) {
-                        await api.rawData.disableSample(project.id, sample.id);
-                    }
                     // update metadata
                     sample.metadata = sample.metadata || {};
                     sample.metadata.reason = json.reason;
-                    sample.metadata.validation = json.label
+                    sample.metadata.validation = json.label;
                     sample.metadata.formattedBoundingBoxes = formattedBoundingBoxes;
-                    await api.rawData.setSampleMetadata(project.id, sample.id, {
-                        metadata: sample.metadata,
-                    });
+
+                    // dry-run, only propose?
+                    if (proposeActionsJobId) {
+                        await api.rawData.setSampleProposedChanges(project.id, sample.id, {
+                            jobId: proposeActionsJobId,
+                            proposedChanges: {
+                                isDisabled: disableLabelsArgv.indexOf(json.label) > -1 ?
+                                    true :
+                                    undefined /* otherwise, keep the current state */,
+                                metadata: sample.metadata,
+                            }
+                        });
+                    }
+                    else {
+                        if (disableLabelsArgv.indexOf(json.label) > -1) {
+                            await api.rawData.disableSample(project.id, sample.id);
+                        }
+                        await api.rawData.setSampleMetadata(project.id, sample.id, {
+                            metadata: sample.metadata,
+                        });
+                    }
                 }, {
                     fnName: 'edgeimpulse.api',
                     maxRetries: 3,
@@ -229,12 +317,17 @@ const concurrencyArgv = program.concurrency ? Number(program.concurrency) : 1;
         try {
             console.log(`validating ${total.toLocaleString()} samples...`);
 
-            await asyncPool(concurrencyArgv, enabledSamples.slice(0, total), labelSampleWithOpenAI);
+            await asyncPool(concurrencyArgv, samplesToProcess.slice(0, total), labelSampleWithOpenAI);
 
             clearInterval(updateIv);
 
             console.log(`[${total}/${total}] Validating samples... ` + getSummary());
-            console.log(`Done validating samples, goodbye!`);
+            console.log(`Done validating samples!`);
+            console.log(``);
+            console.log(`OpenAI usage info:`);
+            console.log(`    Model = ${model}`);
+            console.log(`    Input tokens = ${promptTokensTotal.toLocaleString()}`);
+            console.log(`    Output tokens = ${completionTokensTotal.toLocaleString()}`);
         }
         finally {
             clearInterval(updateIv);
@@ -253,7 +346,6 @@ async function listEnabledData(projectId: number) {
     const limit = 1000;
     let offset = 0;
     let allSamples: models.Sample[] = [];
-    let uniqueLabels = new Set<string>();
 
     let iv = setInterval(() => {
         console.log(`Still finding enabled data (found ${allSamples.length} samples)...`);
@@ -266,19 +358,15 @@ async function listEnabledData(projectId: number) {
                 offset: offset,
                 limit: limit,
             });
-            
+
             if (ret.samples.length === 0) {
                 break;
             }
             for (let s of ret.samples) {
-               
-                
+
+
                 if (s.chartType === 'image' && s.boundingBoxes.length > 0) {
-                     // find unique labels
-                    for (let label of s.boundingBoxes) {
-                        uniqueLabels.add(label["label"]);
-                    }
-                    if (s.isDisabled === false) {   
+                    if (s.isDisabled === false) {
                         allSamples.push(s);
                     }
                 }
@@ -296,12 +384,7 @@ async function listEnabledData(projectId: number) {
             }
             for (let s of ret.samples) {
                 if (s.chartType === 'image' && s.boundingBoxes.length > 0) {
-                    // find unique labels
-                   for (let label of s.boundingBoxes) {
-                        uniqueLabels.add(label["label"]);
-                }
-
-                   if (s.isDisabled === false) {   
+                   if (s.isDisabled === false) {
                        allSamples.push(s);
                    }
                }
@@ -312,10 +395,68 @@ async function listEnabledData(projectId: number) {
     finally {
         clearInterval(iv);
     }
-    return { enabledSamples: allSamples, uniqueLabels: uniqueLabels };
+    return allSamples;
 }
 
+async function listDataByIds(projectId: number, ids: number[]) {
+    const limit = 1000;
+    let offset = 0;
+    let allSamples: models.Sample[] = [];
 
+    let iv = setInterval(() => {
+        console.log(`Still finding data (found ${allSamples.length} samples)...`);
+    }, 3000);
+
+    try {
+        while (1) {
+            let ret = await api.rawData.listSamples(projectId, {
+                category: 'training',
+                labels: '',
+                offset: offset,
+                limit: limit,
+                proposedActionsJobId: proposeActionsJobId,
+            });
+            if (ret.samples.length === 0) {
+                break;
+            }
+            for (let s of ret.samples) {
+                if (ids.indexOf(s.id) !== -1) {
+                    allSamples.push(s);
+                }
+            }
+            offset += limit;
+        }
+
+        offset = 0;
+        while (1) {
+            let ret = await api.rawData.listSamples(projectId, {
+                category: 'testing',
+                labels: '',
+                offset: offset,
+                limit: limit,
+                proposedActionsJobId: proposeActionsJobId,
+            });
+            if (ret.samples.length === 0) {
+                break;
+            }
+            for (let s of ret.samples) {
+                if (ids.indexOf(s.id) !== -1) {
+                    allSamples.push(s);
+                }
+            }
+            offset += limit;
+        }
+    }
+    finally {
+        clearInterval(iv);
+    }
+    return allSamples;
+}
+
+export async function getUniqueLabels(projectId: number) {
+    const project = await api.projects.getProjectInfo(projectId);
+    return project.dataSummary.labels;
+}
 
 export async function retryWithTimeout<T>(fn: () => Promise<T>, opts: {
     fnName: string,
