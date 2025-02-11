@@ -2,7 +2,7 @@
   "name": "llm-based-object-detection-validation",
   "private": true,
   "version": "1.0.0",
-  "description": "Import data from an S3 (compatible) bucket into a project",
+  "description": "Validate if object detection data is correct using GPT4-o",
   "scripts": {
     "build": "node_modules/.bin/tsc -p .",
     "eslint": "tsc -b . && eslint . -c .eslintrc.json --resolve-plugins-relative-to . --ext .ts",
@@ -12,8 +12,8 @@
   "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
     "commander": "4.1.1",
-    "edge-impulse-api": "^1.49.31",
-    "openai": "^4.47.1",
+    "edge-impulse-api": "1.61.3",
+    "openai": "4.67.2",
     "tiny-async-pool": "1.1.0",
     "ws": "7.2.0"
   },
