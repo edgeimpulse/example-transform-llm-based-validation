@@ -27,15 +27,9 @@ program
     .description('Label using an LLM ' + packageVersion)
     .version(packageVersion)
 
-    .requiredOption('--validation1 <prompt>',
+    .requiredOption('--validation-prompt <prompt>',
             `Disable the sample if this prompt is true` +
-            `E.g. "The bounding boxes and labels do not correspond to to the objects in the image" `)
-    .requiredOption('--validation2 <prompt>',
-        `Disable the sample if this prompt is true` +
-        `E.g. "The bounding boxes and labels do not correspond to to the objects in the image" `)
-    .requiredOption('--validation3 <prompt>',
-            `Disable the sample if this prompt is true` +
-            `E.g. "The bounding boxes and labels do not correspond to to the objects in the image" `)
+            `E.g. "- The bounding boxes and labels do not correspond to to the objects in the image" `)
     .option('--limit <n>', `Max number of samples to process`)
     .option('--image-quality <quality>', 'Quality of the image to send to GPT. Either "auto", "low" or "high" (default "auto")')
     .option('--concurrency <n>', `Concurrency (default: 1)`)
@@ -47,9 +41,10 @@ program
 
 const api = new EdgeImpulseApi({ endpoint: API_URL });
 
-const validation1Argv = <string>program.validation1;
-const validation2Argv = <string>program.validation2;
-const validation3Argv = <string>program.validation3;
+// the replacement looks weird; but if calling this from CLI like
+// "--prompt 'test\nanother line'" we'll get this still escaped
+// (you could use $'test\nanotherline' but we won't do that in the Edge Impulse backend)
+const validationPromptArgv = (<string>program.validationPrompt).replaceAll('\\n', '\n');
 const disableLabelsArgv = ["invalid"];
 const imageQualityArgv = (<'auto' | 'low' | 'high'>program.imageQuality) || 'auto';
 const limitArgv = program.limit ? Number(program.limit) : undefined;
@@ -100,9 +95,11 @@ if (dataIdsFile) {
         const project = (await api.projects.listProjects()).projects[0];
 
         console.log(`Validating data for "${project.owner} / ${project.name}"`);
-        console.log(`    Validation1: "${validation1Argv}"`);
-        console.log(`    Validation2: "${validation2Argv}"`);
-        console.log(`    Validation3: "${validation3Argv}"`);
+        console.log(`    Prompt:`);
+        for (let prompt of validationPromptArgv.split('\n')) {
+            if (!prompt.trim()) continue;
+            console.log(`        ${prompt.trim()}`);
+        }
         console.log(`    Image quality: ${imageQualityArgv}`);
         console.log(`    Limit no. of samples to label to: ${typeof limitArgv === 'number' ? limitArgv.toLocaleString() : 'No limit'}`);
         console.log(`    Concurrency: ${concurrencyArgv}`);
@@ -181,13 +178,11 @@ if (dataIdsFile) {
                             content: [{
                                 type: 'text',
                                 text: `The following image is from a dataset with these possible labels: \`${Array.from(uniqueLabels).join(', ')}\`. ` +
-                                `This image has labeled bounding boxes consisting of: \`${formattedBoundingBoxes}\`. ` +
-                                `Respond with \"invalid\" if:
-                                - \`${validation1Argv}\`
-                                - \`${validation2Argv}\`
-                                - \`${validation3Argv}\`
+`This image has labeled bounding boxes consisting of: \`${formattedBoundingBoxes}\`. ` +
+`Respond with "invalid" if:
+${validationPromptArgv}
 
-                                Otherwise respond with \"valid\".`,
+                                Otherwise respond with "valid".`,
                             }, {
                                 type: 'image_url',
                                 image_url: {
@@ -261,7 +256,6 @@ if (dataIdsFile) {
                     sample.metadata = sample.metadata || {};
                     sample.metadata.reason = json.reason;
                     sample.metadata.validation = json.label;
-                    sample.metadata.formattedBoundingBoxes = formattedBoundingBoxes;
 
                     // dry-run, only propose?
                     if (proposeActionsJobId) {

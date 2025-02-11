@@ -1,45 +1,66 @@
-# Validate Object Detection Datasets Using GPT-4o
+# AI labeling block: Bounding box validation Using GPT-4o
 
-Let GPT-4o look at every image in your object detection dataset and check against up to three validation prompts you provide. If images are not compliant they will be disabled and reasoning will be put into the metadata. The block passes each image's bounding boxes and labels to GPT-4o so you can for example check if "The bounding boxes and labels do not correspond to to the objects in the image" among other things. 
+Let GPT-4o look at every image in your object detection dataset and check against a validation prompt you provide. If images are not compliant they will be disabled and reasoning will be put into the metadata. The block passes each image's bounding boxes and labels to GPT-4o so you can for example check if "The bounding boxes and labels do not correspond to to the objects in the image" among other things.
 
-You must pass an OPENAI API key either in the field below or via a secret which you can add from the Custom Blocks->Transformation page in your org with the name OPENAI_API_KEY. 
+![Demo](images/demo.png)
 
-![image](https://github.com/user-attachments/assets/47544b24-f16f-4a84-ac7b-53ca9159e581)
-## How to run (Edge Impulse) (Enterprise Only)
+## Use this from Edge Impulse
 
-1. Go to an Enterprise project, upload an Object Detection dataset which you wish to validatae
-2. Choose **Data acquisition->Data Sources->Add new data source**.
-3. Select Transformation Block and the 'Validate Object Detection Datasets Using GPT-4o' block, fill in your prompts and and run the block.
+If you just want to use GPT-4o as a data validation tool in your Edge Impulse project you don't need this repo. Just go to any project, select **Data acquisition > AI labeling**, choose **Bounding box validation Using GPT-4o**.
 
-    > You need an OPENAI API Key to run the GPT4o model 
+> You'll need an OpenAI API Key, see [OpenAI Platform > API Keys](https://platform.openai.com/api-keys).
 
-4. Any items which are invalid will be disabled. Reasoning will be provided in the metadata for each data item
-   ![image](https://github.com/user-attachments/assets/5c042831-4301-46e6-8431-f209f09f1694)
+## Developing your own block
 
+You can use this repository to develop your own block that uses GPT-4o (or some other LLM) to help you do data curation (or other tasks).
 
-### Customizing this repository (enterprise only)
+1. Create a new Edge Impulse project, and add some images.
+2. Create a file called `ids.json` and add the IDs of the samples you want to label. You can find the sample ID by clicking the 'expand' button on **Data acquisiton**.
 
-You can modify this repository and push it as a new custom transformation block.
+    ![Finding IDs](images/find_ids.png)
 
-1. Install the [Edge Impulse CLI](https://docs.edgeimpulse.com/docs/tools/edge-impulse-cli).
-2. Open a command prompt or terminal, and navigate to this folder.
-3. Create a new transformation block:
+    Add these IDs to the `ids.json` file as an array of numbers, e.g.:
+
+    ```json
+    [1299267659, 1299267609, 1299267606]
+    ```
+
+3. Load your API keys (both Edge Impulse and OpenAI):
+
+    ```
+    export OPENAI_API_KEY=sk-M...
+    export EI_PROJECT_API_KEY=ei_44...
+    ```
+
+    > You can find your OpenAI API key on the [OpenAI API Keys](https://platform.openai.com/api-keys) page. You can find your Edge Impulse API Key via **Dashboard > Keys**.
+
+4. Install Node.js 20.
+5. Build and run this project to label your data:
+
+    ```
+    npm run build
+    node build/llm-validation.js \
+        --validation-prompt "- The bounding boxes and labels do not correspond to to the objects in the image\n- The image is not clear enough to determine the objects in the image" \
+        --concurrency 10 \
+        --data-ids-file ids.json
+    ```
+
+6. Afterwards you'll have labeled data in your project.
+
+### Pushing block to Edge Impulse (enterprise only)
+
+If you've modified this block, you can push it back to Edge Impulse so it's available to everyone in your organization.
+
+1. Update `parameters.json` to update the name and description of your block.
+2. Initialize and push the block:
 
     ```
     $ edge-impulse-blocks init
-
-    ? Choose a type of block: Transformation block
-    ? Choose an option: Create a new block
-    ? Enter the name of your block: Custom Validate Object Detection Datasets Using GPT-4o
-    ? Enter the description of your block: Use GPT4o to validate a dataset
-    ? What type of data does this block operate on? Standalone (runs the container, but no files / data items passed in)
-    ? Which buckets do you want to mount into this block (will be mounted under /mnt/s3fs/BUCKET_NAME, you can change these mount points in the St
-    udio)?
-    ? Would you like to download and load the example repository? no
-    ```
-
-4. Push the block:
-
-    ```
     $ edge-impulse-blocks push
     ```
+
+3. Afterwards, you can run your block through **Data acquisition > AI labeling** in any Edge Impulse project.
+
+### Proposed changes
+
+AI labeling blocks should be able to run in 'preview' mode (triggered when you click *Label preview data* in the Studio) - where changes are _staged_ but not directly applied. If this is the case `--propose-actions <job-id>` is passed into your block. When you see this flag you should not apply changes directly (e.g. via `api.rawData.editLabel`) but rather use the `setSampleProposedChanges` API. Search for this API in [llm-validation.ts](llm-validation.ts) to see how this should be used.

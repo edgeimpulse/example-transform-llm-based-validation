@@ -1,16 +1,12 @@
 {
     "version": 1,
-    "type": "transform",
+    "type": "ai-action",
     "info": {
-        "name": "Validate Object Detection Datasets Using GPT-4o",
-        "description": "Let GPT-4o look at every image in your object detection dataset and check against up to three validation prompts you provide. If images are not compliant they will be disabled and reasoning will be put into the metadata. The block passes each image's bounding boxes and labels to GPT-4o so you can for example check if \"The bounding boxes and labels do not correspond to the objects in the image\".",
-        "operatesOn": "standalone",
-        "transformMountpoints": [],
-        "allowExtraCliArguments": false,
-        "cliArguments": "",
-        "indMetadata": true,
-        "showInCreateTransformationJob": false,
-        "showInDataSources": true
+        "name": "Bounding box validation Using GPT-4o",
+        "description": "Use GPT-4o to validate that your bounding boxes are correct. If images are not compliant they will be disabled and reasoning will be put into the metadata. The block passes each image's bounding boxes and labels to GPT-4o so you can for example check if \"The bounding boxes and labels do not correspond to the objects in the image\".",
+        "operatesOn": [
+            "images_object_detection"
+        ]
     },
     "parameters": [
         {
@@ -21,33 +17,13 @@
             "param": "OPENAI_API_KEY"
         },
         {
-            "name": "Validation Prompt 1",
-            "value": "The bounding boxes and labels do not correspond to to the objects in the image",
+            "name": "Validation prompt",
+            "value": "- The bounding boxes and labels do not correspond to to the objects in the image\n- The image is not clear enough to determine the objects in the image\n- There is text overlay visible on this image",
             "type": "string",
             "help": "Disable the sample if this prompt is true",
-            "param": "validation1"
-        },
-        {
-            "name": "Validation Prompt 2",
-            "value": "The image is not clear enough to determine the objects in the image.",
-            "type": "string",
-            "help": "Disable the sample if this prompt is true",
-            "param": "validation2"
-        },
-        {
-            "name": "Validation Prompt 3",
-            "value": "There is text overlay visible on this image.",
-            "type": "string",
-            "help": "Disable the sample if this prompt is true",
-            "param": "validation3"
-        },
-        {
-            "name": "Max. no. of samples to label",
-            "value": "",
-            "type": "int",
-            "optional": true,
-            "help": "Number of samples to label",
-            "param": "limit"
+            "param": "validation-prompt",
+            "multiline": true,
+            "hint": "Put each prompt on a new line, and start with a -"
         },
         {
             "name": "Image quality",
